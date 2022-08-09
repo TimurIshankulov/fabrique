@@ -3,12 +3,14 @@ from rest_framework import permissions
 from rest_framework import generics
 from rest_framework import status
 from rest_framework.response import Response
+from django.core.exceptions import ValidationError
 
 from .models import Mailing, Client, Message
 from .serializers import MailingSerializer, ClientSerializer, MessageSerializer
 
 
 class CreateClientView(generics.GenericAPIView):
+    """Creates client if it's not exist yet"""
     permission_classes = [permissions.AllowAny]
     serializer_class = ClientSerializer
 
@@ -24,8 +26,13 @@ class CreateClientView(generics.GenericAPIView):
             client.provider_code = data.get('provider_code')
             client.tag = data.get('tag')
             client.timezone = data.get('timezone')
-            client.save()
-        else:
+            try:  # Validate data before save
+                client.full_clean()
+                client.save()
+            except ValidationError:
+                message = {'error': 'Incorrect data!'}
+                return Response(message)
+        else:  # Client already exists
             message = 'Client already exists!'
             return Response(message, status=status.HTTP_400_BAD_REQUEST)
 
@@ -37,6 +44,7 @@ class CreateClientView(generics.GenericAPIView):
 
 
 class GetUserView(generics.GenericAPIView):
+    """Returns client's data by its unique_id"""
     permission_classes = [permissions.AllowAny]
     serializer_class = ClientSerializer
 
@@ -54,6 +62,7 @@ class GetUserView(generics.GenericAPIView):
 
 
 class UpdateClientView(generics.GenericAPIView):
+    """Updates client info and return modified client data"""
     permission_classes = [permissions.AllowAny]
     serializer_class = ClientSerializer
 
@@ -74,7 +83,13 @@ class UpdateClientView(generics.GenericAPIView):
             client.tag = data.get('tag')
         if data.get('timezone'):
             client.timezone = data.get('timezone')
-        client.save()
+
+        try:  # Validate data before save
+            client.full_clean()
+            client.save()
+        except ValidationError:
+            message = {'error': 'Incorrect data!'}
+            return Response(message)
 
         message = {'client': ClientSerializer(
             client,
@@ -84,6 +99,7 @@ class UpdateClientView(generics.GenericAPIView):
 
 
 class RemoveClientView(generics.GenericAPIView):
+    """Removes client from the database by its unique_id"""
     permission_classes = [permissions.AllowAny]
     serializer_class = ClientSerializer
 
@@ -104,6 +120,7 @@ class RemoveClientView(generics.GenericAPIView):
 
 
 class CreateMailingView(generics.GenericAPIView):
+    """Creates mailing if it's not exist yet"""
     permission_classes = [permissions.AllowAny]
     serializer_class = MailingSerializer
 
@@ -119,6 +136,7 @@ class CreateMailingView(generics.GenericAPIView):
             mailing.message_text = data.get('message_text')
             mailing.filter_property = data.get('filter_property')
             mailing.datetime_end = data.get('datetime_end')
+            mailing.status = data.get('status')
             mailing.save()
         else:
             message = 'Mailing already exists!'
@@ -132,6 +150,7 @@ class CreateMailingView(generics.GenericAPIView):
 
 
 class GetMailingView(generics.GenericAPIView):
+    """Returns mailing data by its unique_id"""
     permission_classes = [permissions.AllowAny]
     serializer_class = MailingSerializer
 
@@ -149,6 +168,7 @@ class GetMailingView(generics.GenericAPIView):
 
 
 class UpdateMailingView(generics.GenericAPIView):
+    """Updates mailing data and returns modified record"""
     permission_classes = [permissions.AllowAny]
     serializer_class = MailingSerializer
 
@@ -169,6 +189,8 @@ class UpdateMailingView(generics.GenericAPIView):
             mailing.filter_property = data.get('filter_property')
         if data.get('datetime_end'):
             mailing.datetime_end = data.get('datetime_end')
+        if data.get('status'):
+            mailing.status = data.get('status')
         mailing.save()
 
         message = {'mailing': MailingSerializer(
@@ -179,6 +201,7 @@ class UpdateMailingView(generics.GenericAPIView):
 
 
 class RemoveMailingView(generics.GenericAPIView):
+    """Removes mailing from the database"""
     permission_classes = [permissions.AllowAny]
     serializer_class = MailingSerializer
 
@@ -196,3 +219,39 @@ class RemoveMailingView(generics.GenericAPIView):
             context=self.get_serializer_context()).data,
                    'message': 'Mailing removed successfully'}
         return Response(message)
+
+
+class GetMailingStatisticsView(generics.GenericAPIView):
+    """Returns statistics of a chosen mailing"""
+    permission_classes = [permissions.AllowAny]
+    serializer_class = MessageSerializer
+
+    def get(self, request, *args,  **kwargs):
+        unique_id = self.kwargs['unique_id']
+        mailing = Mailing.objects.get(unique_id=unique_id)
+
+        messages = Message.objects.filter(mailing=unique_id).filter(status='sent')
+        data = []
+        for message in messages:
+            data.append({'message': MessageSerializer(message, context=self.get_serializer_context()).data})
+        return Response(data)
+
+
+class GetGeneralStatisticsView(generics.GenericAPIView):
+    """
+    Returns overall statistics of mailings with number of messages
+    grouped by they status. Response includes mailing data.
+    """
+    permission_classes = [permissions.AllowAny]
+    serializer_class = MailingSerializer
+
+    def get(self, request, *args,  **kwargs):
+        data = []
+        for mailing in Mailing.objects.all():
+            record = {'mailing': MailingSerializer(mailing, context=self.get_serializer_context()).data,
+                      'messages_new': Message.objects.filter(mailing=mailing, status='new').count(),
+                      'messages_sent': Message.objects.filter(mailing=mailing, status='sent').count(),
+                      'messages_error': Message.objects.filter(mailing=mailing, status='error').count()}
+            data.append(record)
+
+        return Response(data)
