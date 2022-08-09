@@ -34,3 +34,6 @@ celery -A fabrique worker -l info
 ```
 celery -A fabrique beat -l info
 ```
+## Документация по API
+
+https://documenter.getpostman.com/view/9290909/VUjPHk2G
