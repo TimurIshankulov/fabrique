@@ -1,3 +1,5 @@
+fabrique/config.py
+celerybeat-schedule.*
 .idea/
 
 # Byte-compiled / optimized / DLL files
